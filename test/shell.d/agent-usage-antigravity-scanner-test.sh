@@ -66,9 +66,9 @@ pass "Antigravity collector counts prompts and sessions from local files"
   fail "Antigravity collector places today's prompts on the last day of the week" "$result"
 pass "Antigravity collector places today's prompts on the last day of the week"
 
-[[ $(jq -c '.limits' <<<"$result") == '[{"label":"Gemini Models — Weekly","title":"Gemini Models — Weekly","percent":0.075,"resetsAt":"2026-09-03T20:12:05Z"},{"label":"Gemini Models — Session (5-hour)","title":"Gemini Models — Session (5-hour)","percent":0.005,"resetsAt":"2026-08-30T22:15:32Z"},{"label":"Claude and GPT models — Weekly","title":"Claude and GPT models — Weekly","percent":0.0,"resetsAt":"2026-09-06T17:25:01Z"}]' ]] ||
-  fail "Antigravity collector inverts remaining_fraction into percent used and drops 'Remaining' from the label" "$result"
-pass "Antigravity collector inverts remaining_fraction into percent used and drops 'Remaining' from the label"
+[[ $(jq -c '.limits' <<<"$result") == '[{"label":"Gemini Models — Weekly","title":"Gemini Models — Weekly","percent":0.925,"isRemaining":true,"resetsAt":"2026-09-03T20:12:05Z"},{"label":"Gemini Models — Session (5-hour)","title":"Gemini Models — Session (5-hour)","percent":0.995,"isRemaining":true,"resetsAt":"2026-08-30T22:15:32Z"},{"label":"Claude and GPT models — Weekly","title":"Claude and GPT models — Weekly","percent":1.0,"isRemaining":true,"resetsAt":"2026-09-06T17:25:01Z"}]' ]] ||
+  fail "Antigravity collector preserves remaining_fraction and sets isRemaining" "$result"
+pass "Antigravity collector preserves remaining_fraction and sets isRemaining"
 
 # Without agy on PATH, stats still ship -- the collector shouldn't go dark
 # just because the CLI that provides limits is missing.

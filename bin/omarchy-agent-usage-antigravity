@@ -28,11 +28,9 @@ AGENT_ID = "antigravity"
 AGENT_NAME = "Antigravity"
 AUTH_HELP = "Run `agy` and sign in, then retry."
 
-# agy reports remaining_fraction (100% -> 0% as quota depletes). Omarchy's
-# convention, set by the Claude and Codex collectors, is percent USED (0% ->
-# 100% as quota depletes) -- so this both inverts the fraction and drops
-# "Remaining" from the label, which would otherwise contradict the number
-# next to it.
+# agy reports remaining_fraction (100% -> 0% as quota depletes), representing
+# available quota allowance. We report this directly so the meters and percentages
+# match agy's /usage output 1:1, marking isRemaining: True.
 WINDOW_LABELS = {"weekly": "Weekly", "5h": "Session (5-hour)"}
 
 
@@ -178,7 +176,7 @@ def limits_from_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
       if remaining is None:
         continue
       try:
-        percent = max(0.0, min(1.0, 1.0 - float(remaining)))
+        percent = max(0.0, min(1.0, float(remaining)))
       except (TypeError, ValueError):
         continue
       window = str(bucket.get("window") or "")
@@ -188,6 +186,7 @@ def limits_from_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
         "label": label,
         "title": label,
         "percent": round(percent, 4),
+        "isRemaining": True,
         "resetsAt": str(bucket.get("reset_time") or ""),
       })
   return limits

@@ -52,10 +52,24 @@ collect() {
 }
 
 pids=()
-for collector in "$OMARCHY_PATH"/bin/omarchy-agent-usage-*; do
-  [[ -x $collector ]] || continue
+declare -A seen_agents
+collectors=()
+
+for dir in "$HOME/.local/bin" "$OMARCHY_PATH/bin"; do
+  [[ -d $dir ]] || continue
+  for collector in "$dir"/omarchy-agent-usage-*; do
+    [[ -x $collector ]] || continue
+    agent="${collector##*/omarchy-agent-usage-}"
+    [[ $agent == "update" ]] && continue
+    if [[ -z ${seen_agents[$agent]:-} ]]; then
+      seen_agents[$agent]=1
+      collectors+=("$collector")
+    fi
+  done
+done
+
+for collector in "${collectors[@]}"; do
   agent="${collector##*/omarchy-agent-usage-}"
-  [[ $agent == "update" ]] && continue
   wanted "$agent" || continue
   collect "$collector" "$agent" &
   pids+=($!)
