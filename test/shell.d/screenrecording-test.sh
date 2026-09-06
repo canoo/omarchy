@@ -317,3 +317,29 @@ grep -F '"trigger.capture.screenrecord.edit"' "$ROOT/default/omarchy/omarchy-men
   fail "menu contains trigger.capture.screenrecord.edit"
 pass "menu contains screenrecord gif and edit triggers"
 
+# Test watermark commands
+mock_svg="$tmp_dir/test-logo.svg"
+echo '<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="5"/></svg>' >"$mock_svg"
+XDG_CONFIG_HOME="$tmp_dir/.config" "$ROOT/bin/omarchy-capture-watermark-set" "$mock_svg"
+[[ -f "$tmp_dir/.config/omarchy/watermark.svg" ]] || fail "watermark-set copies SVG"
+grep -q '"enabled": true' "$tmp_dir/.config/omarchy/watermark.json" || fail "watermark-set enables watermark"
+pass "omarchy-capture-watermark-set configures SVG watermark"
+
+XDG_CONFIG_HOME="$tmp_dir/.config" "$ROOT/bin/omarchy-capture-watermark-toggle"
+grep -q '"enabled": false' "$tmp_dir/.config/omarchy/watermark.json" || fail "watermark-toggle disables watermark"
+XDG_CONFIG_HOME="$tmp_dir/.config" "$ROOT/bin/omarchy-capture-watermark-toggle"
+grep -q '"enabled": true' "$tmp_dir/.config/omarchy/watermark.json" || fail "watermark-toggle re-enables watermark"
+pass "omarchy-capture-watermark-toggle toggles watermark state"
+
+XDG_CONFIG_HOME="$tmp_dir/.config" "$ROOT/bin/omarchy-capture-soundwave-toggle"
+grep -q '"soundwave": false' "$tmp_dir/.config/omarchy/watermark.json" || fail "soundwave-toggle disables soundwave"
+XDG_CONFIG_HOME="$tmp_dir/.config" "$ROOT/bin/omarchy-capture-soundwave-toggle"
+grep -q '"soundwave": true' "$tmp_dir/.config/omarchy/watermark.json" || fail "soundwave-toggle re-enables soundwave"
+pass "omarchy-capture-soundwave-toggle toggles soundwave state"
+
+grep -F '"trigger.capture.screenrecord.watermark"' "$ROOT/default/omarchy/omarchy-menu.jsonc" >/dev/null || \
+  fail "menu contains trigger.capture.screenrecord.watermark"
+grep -F '"trigger.capture.screenrecord.soundwave"' "$ROOT/default/omarchy/omarchy-menu.jsonc" >/dev/null || \
+  fail "menu contains trigger.capture.screenrecord.soundwave"
+pass "menu contains screenrecord watermark and soundwave triggers"
+

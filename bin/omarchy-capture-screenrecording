@@ -36,6 +36,8 @@ FULLSCREEN="false"
 STOP_RECORDING="false"
 GIF="false"
 OPEN_IN_EDITOR="false"
+FORCE_SOUNDWAVE=""
+FORCE_WATERMARK=""
 SCREENRECORD_EDITOR="${OMARCHY_SCREENRECORD_EDITOR:-}"
 if [[ -z $SCREENRECORD_EDITOR ]]; then
   if omarchy-cmd-present kdenlive; then
@@ -67,6 +69,10 @@ for arg in "$@"; do
   --gif) GIF="true" ;;
   --edit | --open-in-editor) OPEN_IN_EDITOR="true" ;;
   --editor=*) SCREENRECORD_EDITOR="${arg#*=}" ;;
+  --with-soundwave) FORCE_SOUNDWAVE="true" ;;
+  --without-soundwave) FORCE_SOUNDWAVE="false" ;;
+  --with-watermark) FORCE_WATERMARK="true" ;;
+  --without-watermark) FORCE_WATERMARK="false" ;;
   esac
 done
 
@@ -220,6 +226,8 @@ start_screenrecording() {
 GIF=$GIF
 OPEN_IN_EDITOR=$OPEN_IN_EDITOR
 SCREENRECORD_EDITOR=$SCREENRECORD_EDITOR
+FORCE_SOUNDWAVE=$FORCE_SOUNDWAVE
+FORCE_WATERMARK=$FORCE_WATERMARK
 EOF
     toggle_screenrecording_indicator
   fi
@@ -248,6 +256,10 @@ stop_screenrecording() {
     --gif) GIF="true" ;;
     --edit | --open-in-editor) OPEN_IN_EDITOR="true" ;;
     --editor=*) SCREENRECORD_EDITOR="${arg#*=}" ;;
+    --with-soundwave) FORCE_SOUNDWAVE="true" ;;
+    --without-soundwave) FORCE_SOUNDWAVE="false" ;;
+    --with-watermark) FORCE_WATERMARK="true" ;;
+    --without-watermark) FORCE_WATERMARK="false" ;;
     esac
   done
 
@@ -321,23 +333,74 @@ finalize_recording() {
   latest=$(cat "$RECORDING_FILE" 2>/dev/null)
   [[ -f $latest ]] || return
 
-  # Re-encode only when the first GOP contains discardable warmup packets — stream copy can't
-  # trim those (it rewinds to the keyframe). Clean recordings stay on the fast stream-copy path.
+  local wm_svg="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/watermark.svg"
+  local wm_config="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/watermark.json"
+  local wm_enabled="false"
+  local soundwave_enabled="true"
+
+  if [[ -f $wm_config ]]; then
+    wm_enabled=$(jq -r 'if .enabled == false then false else true end' "$wm_config" 2>/dev/null)
+    soundwave_enabled=$(jq -r 'if .soundwave == false then false else true end' "$wm_config" 2>/dev/null)
+  fi
+
+  [[ -n $FORCE_WATERMARK ]] && wm_enabled="$FORCE_WATERMARK"
+  [[ -n $FORCE_SOUNDWAVE ]] && soundwave_enabled="$FORCE_SOUNDWAVE"
+  [[ -f $wm_svg ]] || wm_enabled="false"
+
+  local has_audio="false"
+  if ffprobe -v error -select_streams a -show_entries stream=codec_type -of csv=p=0 "$latest" 2>/dev/null | grep -q audio; then
+    has_audio="true"
+  fi
+
+  local processed="${latest%.mp4}-processed.mp4"
+
+  if [[ ($has_audio == "true" && $soundwave_enabled == "true") || $wm_enabled == "true" ]]; then
+    local vid_w
+    vid_w=$(ffprobe -v error -select_streams v:0 -show_entries stream=width -of csv=p=0 "$latest" 2>/dev/null)
+    local wm_w=$(( ${vid_w:-1920} * 6 / 100 ))
+    (( wm_w < 36 )) && wm_w=36
+    (( wm_w > 160 )) && wm_w=160
+
+    local fc=""
+    local inputs=(-y -ss 0.1 -i "$latest")
+    local maps=()
+
+    if [[ $wm_enabled == "true" ]]; then
+      inputs+=(-i "$wm_svg")
+    fi
+
+    if [[ $has_audio == "true" && $soundwave_enabled == "true" && $wm_enabled == "true" ]]; then
+      fc="[0:a]volume=enable='lt(t,0.4)':volume=0,afade=t=in:st=0.4:d=0.05,loudnorm=I=-14:TP=-1.5:LRA=11,asplit=2[a_norm][a_wave];[a_wave]showwaves=s=240x44:mode=cline:colors=0x38bdf8@0.95:scale=cbrt:r=30,format=rgba[wave];[0:v]drawbox=x=24:y=ih-68:w=256:h=48:color=black@0.6:t=fill[v_box];[v_box][wave]overlay=x=32:y=H-h-26[v_wave];[1:v]scale=${wm_w}:-1,format=rgba,colorchannelmixer=aa=0.85[wm];[v_wave][wm]overlay=x=W-w-24:y=H-h-24[outv]"
+      maps=(-map "[outv]" -map "[a_norm]" -c:v libx264 -preset veryfast -crf 20 -c:a aac)
+    elif [[ $has_audio == "true" && $soundwave_enabled == "true" ]]; then
+      fc="[0:a]volume=enable='lt(t,0.4)':volume=0,afade=t=in:st=0.4:d=0.05,loudnorm=I=-14:TP=-1.5:LRA=11,asplit=2[a_norm][a_wave];[a_wave]showwaves=s=240x44:mode=cline:colors=0x38bdf8@0.95:scale=cbrt:r=30,format=rgba[wave];[0:v]drawbox=x=24:y=ih-68:w=256:h=48:color=black@0.6:t=fill[v_box];[v_box][wave]overlay=x=32:y=H-h-26[outv]"
+      maps=(-map "[outv]" -map "[a_norm]" -c:v libx264 -preset veryfast -crf 20 -c:a aac)
+    elif [[ $wm_enabled == "true" && $has_audio == "true" ]]; then
+      fc="[0:a]volume=enable='lt(t,0.4)':volume=0,afade=t=in:st=0.4:d=0.05,loudnorm=I=-14:TP=-1.5:LRA=11[a_norm];[1:v]scale=${wm_w}:-1,format=rgba,colorchannelmixer=aa=0.85[wm];[0:v][wm]overlay=x=W-w-24:y=H-h-24[outv]"
+      maps=(-map "[outv]" -map "[a_norm]" -c:v libx264 -preset veryfast -crf 20 -c:a aac)
+    elif [[ $wm_enabled == "true" ]]; then
+      fc="[1:v]scale=${wm_w}:-1,format=rgba,colorchannelmixer=aa=0.85[wm];[0:v][wm]overlay=x=W-w-24:y=H-h-24[outv]"
+      maps=(-map "[outv]" -c:v libx264 -preset veryfast -crf 20)
+    fi
+
+    if ffmpeg "${inputs[@]}" -filter_complex "$fc" "${maps[@]}" "$processed" -loglevel quiet 2>/dev/null; then
+      mv "$processed" "$latest"
+      return
+    else
+      rm -f "$processed"
+    fi
+  fi
+
   local video_codec=(-c:v copy)
   if ffprobe -v error -select_streams v:0 -read_intervals %+0.2 -show_entries packet=flags -of csv=p=0 "$latest" 2>/dev/null | grep -q D; then
     video_codec=(-c:v libx264 -preset veryfast -crf 20)
   fi
 
-  # Trim the first frame, and normalize audio to -14 LUFS if present, in a single pass
   local args=(-y -ss 0.1 -i "$latest" "${video_codec[@]}")
-  if ffprobe -v error -select_streams a -show_entries stream=codec_type -of csv=p=0 "$latest" 2>/dev/null | grep -q audio; then
-    # Hard-mute the first 400ms to drop the PipeWire capture-open pop (a near-clipping
-    # transient around 130-200ms that a gentle fade-in can't attenuate enough), then a
-    # 50ms fade avoids a click at the boundary before loudnorm normalizes the rest.
+  if [[ $has_audio == "true" ]]; then
     args+=(-af "volume=enable='lt(t,0.4)':volume=0,afade=t=in:st=0.4:d=0.05,loudnorm=I=-14:TP=-1.5:LRA=11")
   fi
 
-  local processed="${latest%.mp4}-processed.mp4"
   if ffmpeg "${args[@]}" "$processed" -loglevel quiet 2>/dev/null; then
     mv "$processed" "$latest"
   else

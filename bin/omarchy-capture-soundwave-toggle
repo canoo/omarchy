@@ -1,0 +1,23 @@
+#!/bin/bash
+
+# omarchy:summary=Toggle sound wave animation on screen recordings with audio
+# omarchy:group=capture
+# omarchy:examples=omarchy capture soundwave-toggle
+
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy"
+mkdir -p "$CONFIG_DIR"
+CONFIG_FILE="$CONFIG_DIR/watermark.json"
+
+if [[ ! -f $CONFIG_FILE ]]; then
+  echo '{"enabled": true, "position": "bottom-right", "opacity": 0.85, "scale": 0.06, "soundwave": true}' > "$CONFIG_FILE"
+fi
+
+sw_enabled=$(jq -r 'if .soundwave == false then false else true end' "$CONFIG_FILE" 2>/dev/null)
+
+if [[ $sw_enabled == "true" ]]; then
+  jq '.soundwave = false' "$CONFIG_FILE" > "${CONFIG_FILE}.tmp" 2>/dev/null && mv "${CONFIG_FILE}.tmp" "$CONFIG_FILE"
+  omarchy-notification-send "Sound Wave Disabled" "Recordings with audio will omit the sound wave visualizer"
+else
+  jq '.soundwave = true' "$CONFIG_FILE" > "${CONFIG_FILE}.tmp" 2>/dev/null && mv "${CONFIG_FILE}.tmp" "$CONFIG_FILE"
+  omarchy-notification-send "Sound Wave Enabled" "Recordings with audio will display sound wave visualizer"
+fi

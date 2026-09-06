@@ -1,0 +1,28 @@
+#!/bin/bash
+
+# omarchy:summary=Toggle watermark overlay on recordings and screenshots
+# omarchy:group=capture
+# omarchy:examples=omarchy capture watermark-toggle
+
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy"
+mkdir -p "$CONFIG_DIR"
+CONFIG_FILE="$CONFIG_DIR/watermark.json"
+WM_SVG="$CONFIG_DIR/watermark.svg"
+
+if [[ ! -f $CONFIG_FILE ]]; then
+  echo '{"enabled": true, "position": "bottom-right", "opacity": 0.85, "scale": 0.06, "soundwave": true}' > "$CONFIG_FILE"
+fi
+
+enabled=$(jq -r 'if .enabled == false then false else true end' "$CONFIG_FILE" 2>/dev/null)
+
+if [[ $enabled == "true" ]]; then
+  jq '.enabled = false' "$CONFIG_FILE" > "${CONFIG_FILE}.tmp" 2>/dev/null && mv "${CONFIG_FILE}.tmp" "$CONFIG_FILE"
+  omarchy-notification-send "Watermark Disabled" "Watermarks turned off for screenshots and recordings"
+else
+  if [[ ! -f $WM_SVG ]]; then
+    omarchy-capture-watermark-set
+    exit 0
+  fi
+  jq '.enabled = true' "$CONFIG_FILE" > "${CONFIG_FILE}.tmp" 2>/dev/null && mv "${CONFIG_FILE}.tmp" "$CONFIG_FILE"
+  omarchy-notification-send "Watermark Enabled" "Watermarks turned on for screenshots and recordings"
+fi

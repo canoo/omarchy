@@ -1,0 +1,44 @@
+#!/bin/bash
+
+# omarchy:summary=Set or upload SVG watermark for screen recordings and screenshots
+# omarchy:group=capture
+# omarchy:args=[<file.svg>]
+# omarchy:examples=omarchy capture watermark-set logo.svg | omarchy capture watermark-set
+# omarchy:aliases=omarchy watermark
+
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy"
+mkdir -p "$CONFIG_DIR"
+WM_SVG="$CONFIG_DIR/watermark.svg"
+CONFIG_FILE="$CONFIG_DIR/watermark.json"
+
+target_svg="${1:-}"
+
+if [[ -z $target_svg ]]; then
+  if omarchy-cmd-present omarchy-file-select; then
+    target_svg=$(omarchy-file-select --title="Select Watermark SVG" --extensions="svg" 2>/dev/null || true)
+  fi
+fi
+
+if [[ -z $target_svg ]]; then
+  exit 0
+fi
+
+if [[ ! -f $target_svg ]]; then
+  omarchy-notification-send -u critical "Watermark Error" "File not found: $target_svg"
+  exit 1
+fi
+
+if ! grep -qi '<svg' "$target_svg" 2>/dev/null; then
+  omarchy-notification-send -u critical "Invalid Watermark" "Selected file is not a valid SVG: $target_svg"
+  exit 1
+fi
+
+cp -f "$target_svg" "$WM_SVG"
+
+if [[ ! -f $CONFIG_FILE ]]; then
+  echo '{"enabled": true, "position": "bottom-right", "opacity": 0.85, "scale": 0.06, "soundwave": true}' > "$CONFIG_FILE"
+else
+  jq '.enabled = true' "$CONFIG_FILE" > "${CONFIG_FILE}.tmp" 2>/dev/null && mv "${CONFIG_FILE}.tmp" "$CONFIG_FILE" || true
+fi
+
+omarchy-notification-send "Watermark Configured" "SVG watermark enabled for screenshots and recordings: $(basename "$target_svg")"

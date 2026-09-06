@@ -60,9 +60,40 @@ set_no_hw_cursors 0
 FILENAME="screenshot-$(date +'%Y-%m-%d_%H-%M-%S').png"
 FILEPATH="$OUTPUT_DIR/$FILENAME"
 
+apply_watermark() {
+  local target="$1"
+  local wm_svg="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/watermark.svg"
+  local config="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/watermark.json"
+
+  [[ -f $wm_svg ]] || return 0
+  if [[ -f $config ]]; then
+    local enabled
+    enabled=$(jq -r 'if .enabled == false then false else true end' "$config" 2>/dev/null)
+    [[ $enabled == "true" ]] || return 0
+  fi
+
+  local img_w
+  img_w=$(ffprobe -v error -select_streams v:0 -show_entries stream=width -of csv=p=0 "$target" 2>/dev/null)
+  [[ -n $img_w ]] || return 0
+
+  local wm_w=$(( img_w * 6 / 100 ))
+  (( wm_w < 32 )) && wm_w=32
+  (( wm_w > 160 )) && wm_w=160
+
+  local tmp="${target%.png}-wm.png"
+  if ffmpeg -y -i "$target" -i "$wm_svg" \
+    -filter_complex "[1:v]scale=${wm_w}:-1,format=rgba,colorchannelmixer=aa=0.85[wm];[0:v][wm]overlay=W-w-20:H-h-20" \
+    "$tmp" -loglevel quiet 2>/dev/null; then
+    mv "$tmp" "$target"
+  else
+    rm -f "$tmp"
+  fi
+}
+
 case "$PROCESSING" in
   slurp)
     grim -g "$SELECTION" "$FILEPATH" || exit 1
+    apply_watermark "$FILEPATH"
     echo "$FILEPATH"
     wl-copy --type image/png <"$FILEPATH"
 
@@ -73,10 +104,15 @@ case "$PROCESSING" in
       --exec "$SCREENSHOT_EDITOR" "$FILEPATH" || true
     ;;
   copy)
-    grim -g "$SELECTION" - | wl-copy --type image/png
+    tmp_copy=$(mktemp --suffix=.png)
+    grim -g "$SELECTION" "$tmp_copy" || exit 1
+    apply_watermark "$tmp_copy"
+    wl-copy --type image/png <"$tmp_copy"
+    rm -f "$tmp_copy"
     ;;
   save)
     grim -g "$SELECTION" "$FILEPATH" || exit 1
+    apply_watermark "$FILEPATH"
     echo "$FILEPATH"
     ;;
 esac
