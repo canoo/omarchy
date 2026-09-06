@@ -288,8 +288,10 @@ Panel {
   function iconCandidatesForProvider(p, surfaceColor) {
     if (!p) return []
     var candidates = []
-    if (p.providerId === "antigravity")
+    if (p.providerId === "antigravity") {
+      candidates.push(Qt.resolvedUrl("assets/antigravity-color.svg"))
       candidates.push(Qt.resolvedUrl("assets/antigravity.png"))
+    }
     if (colorLuminance(surfaceColor || Color.background) >= 0.5)
       candidates.push(Qt.resolvedUrl("assets/" + p.providerId + "-light.svg"))
     candidates.push(Qt.resolvedUrl("assets/" + p.providerId + ".svg"))
@@ -384,12 +386,13 @@ Panel {
       Image {
         anchors.fill: parent
         anchors.margins: 1
-        source: Qt.resolvedUrl("assets/antigravity.png")
+        source: Qt.resolvedUrl("assets/antigravity-color.svg")
         sourceSize.width: parent.width * 2
         sourceSize.height: parent.height * 2
         fillMode: Image.PreserveAspectFit
         smooth: true
         mipmap: true
+        onStatusChanged: if (status === Image.Error) source = Qt.resolvedUrl("assets/antigravity.png")
       }
     }
   }
