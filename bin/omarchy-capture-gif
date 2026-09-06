@@ -1,0 +1,9 @@
+#!/bin/bash
+
+# omarchy:summary=Start or stop screen recording as an animated GIF
+# omarchy:group=capture
+# omarchy:args=[--fullscreen] [--edit] [--editor=<name>]
+# omarchy:examples=omarchy gif | omarchy capture gif | omarchy gif --edit
+# omarchy:aliases=omarchy gif
+
+exec omarchy-capture-screenrecording --gif "$@"

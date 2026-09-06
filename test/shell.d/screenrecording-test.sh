@@ -299,3 +299,21 @@ grep -F 'move = { "(monitor_w-monitor_h*2/9-40)", "(monitor_h-monitor_h/4-40)" }
 grep -F 'move = { "(monitor_w-monitor_h*3/10-40)", "(monitor_h-monitor_h*27/80-40)" }' "$webcam_rules" >/dev/null || \
   fail "large webcam starts at its final corner position"
 pass "webcam size rules place the initial window in its final corner"
+
+"$ROOT/bin/omarchy-capture-gif" --edit
+expected_gif_recorder_args="$tmp_dir/expected-gif-recorder-args"
+printf '%s\n' \
+  "--gif" \
+  "--edit" >"$expected_gif_recorder_args"
+
+if ! cmp -s "$OMARCHY_TEST_RECORDER_ARGS" "$expected_gif_recorder_args"; then
+  fail "omarchy-capture-gif delegates to screenrecording with --gif flag" "$(diff -u "$expected_gif_recorder_args" "$OMARCHY_TEST_RECORDER_ARGS")"
+fi
+pass "omarchy-capture-gif delegates to screenrecording with --gif flag"
+
+grep -F '"trigger.capture.screenrecord.gif"' "$ROOT/default/omarchy/omarchy-menu.jsonc" >/dev/null || \
+  fail "menu contains trigger.capture.screenrecord.gif"
+grep -F '"trigger.capture.screenrecord.edit"' "$ROOT/default/omarchy/omarchy-menu.jsonc" >/dev/null || \
+  fail "menu contains trigger.capture.screenrecord.edit"
+pass "menu contains screenrecord gif and edit triggers"
+
