@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Effects
 import Quickshell
 import Quickshell.Io
 import qs.Commons
@@ -288,10 +289,8 @@ Panel {
   function iconCandidatesForProvider(p, surfaceColor) {
     if (!p) return []
     var candidates = []
-    if (p.providerId === "antigravity") {
+    if (p.providerId === "antigravity")
       candidates.push(Qt.resolvedUrl("assets/antigravity-color.svg"))
-      candidates.push(Qt.resolvedUrl("assets/antigravity.png"))
-    }
     if (colorLuminance(surfaceColor || Color.background) >= 0.5)
       candidates.push(Qt.resolvedUrl("assets/" + p.providerId + "-light.svg"))
     candidates.push(Qt.resolvedUrl("assets/" + p.providerId + ".svg"))
@@ -358,41 +357,60 @@ Panel {
     Item {
       anchors.fill: parent
 
-      Rectangle {
-        id: barRainbowAura
-        anchors.centerIn: parent
-        width: parent.width + 4
-        height: parent.height + 4
-        radius: width / 2
-        opacity: 0.85
-        gradient: Gradient {
-          orientation: Gradient.Horizontal
-          GradientStop { position: 0.0; color: "#ea4335" }
-          GradientStop { position: 0.25; color: "#fbbc05" }
-          GradientStop { position: 0.5; color: "#34a853" }
-          GradientStop { position: 0.75; color: "#4285f4" }
-          GradientStop { position: 1.0; color: "#ea4335" }
-        }
-
-        RotationAnimation on rotation {
-          from: 0
-          to: 360
-          duration: 3500
-          loops: Animation.Infinite
-          running: true
-        }
-      }
-
       Image {
+        id: barMask
         anchors.fill: parent
-        anchors.margins: 1
-        source: Qt.resolvedUrl("assets/antigravity-color.svg")
+        source: Qt.resolvedUrl("assets/antigravity.svg")
         sourceSize.width: parent.width * 2
         sourceSize.height: parent.height * 2
         fillMode: Image.PreserveAspectFit
+        visible: false
+        layer.enabled: true
         smooth: true
         mipmap: true
-        onStatusChanged: if (status === Image.Error) source = Qt.resolvedUrl("assets/antigravity.png")
+      }
+
+      Item {
+        anchors.fill: parent
+        layer.enabled: true
+        layer.smooth: true
+        layer.effect: MultiEffect {
+          maskEnabled: true
+          maskSource: barMask
+        }
+
+        Image {
+          anchors.fill: parent
+          source: Qt.resolvedUrl("assets/antigravity-color.svg")
+          sourceSize.width: parent.width * 2
+          sourceSize.height: parent.height * 2
+          fillMode: Image.PreserveAspectFit
+          smooth: true
+          mipmap: true
+        }
+
+        Rectangle {
+          anchors.centerIn: parent
+          width: parent.width * 2.5
+          height: parent.height * 2.5
+          opacity: 0.65
+          gradient: Gradient {
+            orientation: Gradient.Horizontal
+            GradientStop { position: 0.0; color: "#ea4335" }
+            GradientStop { position: 0.25; color: "#fbbc05" }
+            GradientStop { position: 0.5; color: "#34a853" }
+            GradientStop { position: 0.75; color: "#4285f4" }
+            GradientStop { position: 1.0; color: "#ea4335" }
+          }
+
+          RotationAnimation on rotation {
+            from: 0
+            to: 360
+            duration: 3500
+            loops: Animation.Infinite
+            running: true
+          }
+        }
       }
     }
   }
@@ -471,42 +489,72 @@ Panel {
 
                 readonly property bool isAntigravity: root.provider && root.provider.providerId === "antigravity"
 
-                Rectangle {
-                  id: heroRainbowAura
+                Image {
+                  id: heroMask
+                  visible: false
+                  anchors.fill: parent
+                  source: Qt.resolvedUrl("assets/antigravity.svg")
+                  sourceSize.width: Style.font.display * 2
+                  sourceSize.height: Style.font.display * 2
+                  fillMode: Image.PreserveAspectFit
+                  layer.enabled: heroMark.isAntigravity
+                  smooth: true
+                  mipmap: true
+                }
+
+                Item {
+                  id: heroSwirlLayer
                   visible: heroMark.isAntigravity
-                  anchors.centerIn: parent
-                  width: parent.width + 10
-                  height: parent.height + 10
-                  radius: width / 2
-                  opacity: 0.7
-                  gradient: Gradient {
-                    orientation: Gradient.Horizontal
-                    GradientStop { position: 0.0; color: "#ea4335" }
-                    GradientStop { position: 0.25; color: "#fbbc05" }
-                    GradientStop { position: 0.5; color: "#34a853" }
-                    GradientStop { position: 0.75; color: "#4285f4" }
-                    GradientStop { position: 1.0; color: "#ea4335" }
+                  anchors.fill: parent
+                  layer.enabled: heroMark.isAntigravity
+                  layer.smooth: true
+                  layer.effect: MultiEffect {
+                    maskEnabled: true
+                    maskSource: heroMask
                   }
 
-                  RotationAnimation on rotation {
-                    from: 0
-                    to: 360
-                    duration: 4000
-                    loops: Animation.Infinite
-                    running: heroMark.isAntigravity
+                  Image {
+                    anchors.fill: parent
+                    source: Qt.resolvedUrl("assets/antigravity-color.svg")
+                    sourceSize.width: Style.font.display * 2
+                    sourceSize.height: Style.font.display * 2
+                    fillMode: Image.PreserveAspectFit
+                    smooth: true
+                    mipmap: true
+                  }
+
+                  Rectangle {
+                    anchors.centerIn: parent
+                    width: parent.width * 2.5
+                    height: parent.height * 2.5
+                    opacity: 0.65
+                    gradient: Gradient {
+                      orientation: Gradient.Horizontal
+                      GradientStop { position: 0.0; color: "#ea4335" }
+                      GradientStop { position: 0.25; color: "#fbbc05" }
+                      GradientStop { position: 0.5; color: "#34a853" }
+                      GradientStop { position: 0.75; color: "#4285f4" }
+                      GradientStop { position: 1.0; color: "#ea4335" }
+                    }
+
+                    RotationAnimation on rotation {
+                      from: 0
+                      to: 360
+                      duration: 4000
+                      loops: Animation.Infinite
+                      running: heroMark.isAntigravity
+                    }
                   }
                 }
 
                 Image {
                   id: heroMarkImage
+                  visible: !heroMark.isAntigravity
                   anchors.fill: parent
-                  anchors.margins: heroMark.isAntigravity ? 2 : 0
                   source: heroMark.candidateIndex < heroMark.candidates.length ? heroMark.candidates[heroMark.candidateIndex] : ""
                   sourceSize.width: Style.font.display * 2
                   sourceSize.height: Style.font.display * 2
                   fillMode: Image.PreserveAspectFit
-                  // Advancing source from inside its own status change trips the
-                  // binding-loop detector; defer the step one tick.
                   onStatusChanged: if (status === Image.Error && heroMark.candidateIndex < heroMark.candidates.length)
                     Qt.callLater(function() { heroMark.candidateIndex++ })
                 }
