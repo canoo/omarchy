@@ -247,29 +247,62 @@ url_encode() {
   python3 -c "import urllib.parse, sys; print(urllib.parse.quote(sys.stdin.read().strip()))" <<<"$1"
 }
 
+resolve_mentions() {
+  local target="$1"
+  local text="$2"
+  local config="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/social_mentions.json"
+
+  if [[ ! -f $config ]]; then
+    printf '%s' "$text"
+    return
+  fi
+
+  python3 -c '
+import sys, json, os, re
+text = sys.argv[1]
+target = sys.argv[2]
+config_path = sys.argv[3]
+try:
+    with open(config_path, "r") as f:
+        mentions = json.load(f)
+    def repl(match):
+        key = match.group(1).lower()
+        if key in mentions and target in mentions[key]:
+            return mentions[key][target]
+        return match.group(0)
+    text = re.sub(r"@([a-zA-Z0-9_\.\-]+)", repl, text)
+except Exception:
+    pass
+sys.stdout.write(text)
+' "$text" "$target" "$config"
+}
+
 publish_target() {
   local target="$1"
+  local resolved_text
+  resolved_text=$(resolve_mentions "$target" "$POST_TEXT")
   case "$target" in
   x | twitter)
     local encoded_text
-    encoded_text=$(url_encode "$POST_TEXT")
+    encoded_text=$(url_encode "$resolved_text")
     omarchy-launch-browser "https://x.com/intent/post?text=${encoded_text}"
     ;;
   bluesky)
     local encoded_text
-    encoded_text=$(url_encode "$POST_TEXT")
+    encoded_text=$(url_encode "$resolved_text")
     omarchy-launch-browser "https://bsky.app/intent/compose?text=${encoded_text}"
     ;;
   threads)
     local encoded_text
-    encoded_text=$(url_encode "$POST_TEXT")
+    encoded_text=$(url_encode "$resolved_text")
     omarchy-launch-browser "https://www.threads.net/intent/post?text=${encoded_text}"
     ;;
   instagram | reels)
+    printf '%s\n' "$resolved_text" | wl-copy 2>/dev/null || true
     omarchy-launch-browser "https://www.instagram.com/"
     ;;
   clipboard | *)
-    printf '%s\n' "$POST_TEXT" | wl-copy 2>/dev/null || true
+    printf '%s\n' "$resolved_text" | wl-copy 2>/dev/null || true
     ;;
   esac
 }

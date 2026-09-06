@@ -1,0 +1,23 @@
+#!/bin/bash
+
+# omarchy:summary=Set social media handle for publisher
+# omarchy:category=Tools
+
+platform="${1:-x}"
+draft_file="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/social_draft.json"
+
+if [[ ! -f $draft_file ]]; then
+  echo "{}" > "$draft_file"
+fi
+
+current=$(jq -r ".handles[\"$platform\"] // \"\"" "$draft_file" 2>/dev/null)
+
+new_handle=$(gum input --placeholder "@handle" --value "$current" --header "Enter your @handle for $platform:") || exit 0
+
+if [[ -n $new_handle ]]; then
+  if [[ ! $new_handle =~ ^@ ]]; then
+    new_handle="@$new_handle"
+  fi
+  jq --arg p "$platform" --arg h "$new_handle" '.handles[$p] = $h' "$draft_file" > "${draft_file}.tmp" && mv "${draft_file}.tmp" "$draft_file"
+  omarchy-notification-send "Social Handle Updated" "Set $platform handle to $new_handle"
+fi

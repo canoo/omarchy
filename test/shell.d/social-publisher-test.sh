@@ -97,3 +97,21 @@ clipboard_content=$(cat "$OMARCHY_TEST_CLIPBOARD" 2>/dev/null || true)
 [[ $clipboard_content == *"file://$test_img"* ]] || fail "clipboard has first image URI"
 [[ $clipboard_content == *"file://$test_img2"* ]] || fail "clipboard has second image URI"
 pass "omarchy-publish copies multiple media files as uri-list to clipboard"
+
+# Test 8: Cross-platform mention translation
+mock_config_dir="$tmp_dir/.config/omarchy"
+mkdir -p "$mock_config_dir"
+cat >"$mock_config_dir/social_mentions.json" <<'JSON'
+{
+  "omarchy": {
+    "x": "@omarchy_os",
+    "bluesky": "@omarchy.bsky.social"
+  }
+}
+JSON
+rm -f "$OMARCHY_TEST_BROWSER_URL"
+XDG_CONFIG_HOME="$tmp_dir/.config" "$ROOT/bin/omarchy-publish" --platform=x,bluesky --text="Great update @omarchy" "$test_img"
+tag_urls=$(cat "$OMARCHY_TEST_BROWSER_URL" 2>/dev/null || true)
+[[ $tag_urls == *"x.com/intent/post?text=Great%20update%20%40omarchy_os"* ]] || fail "X mention replaced"
+[[ $tag_urls == *"bsky.app/intent/compose?text=Great%20update%20%40omarchy.bsky.social"* ]] || fail "Bluesky mention replaced"
+pass "omarchy-publish translates cross-platform mentions from social_mentions.json"
