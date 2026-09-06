@@ -3,21 +3,17 @@
 # omarchy:summary=Publish screen recordings, GIFs, or images to social media
 # omarchy:group=publish
 # omarchy:name=
-# omarchy:args=[--platform=<x|instagram|bluesky|threads|all>] [--latest] [--text=<text>] [--reels] [media-file]
-# omarchy:examples=omarchy publish | omarchy publish --latest | omarchy publish --platform=x video.mp4
+# omarchy:args=[--platform=<x|instagram|bluesky|threads|all>] [--latest] [--text=<text>] [--reels] [--media=<files>] [media-files...]
+# omarchy:examples=omarchy publish | omarchy publish --latest | omarchy publish --platform=x video.mp4 | omarchy publish --platform=x,threads img1.png img2.png
 # omarchy:aliases=omarchy social
 
 set -eo pipefail
-
-if [[ ! -t 0 ]]; then
-  exec omarchy-launch-floating-terminal-with-presentation "omarchy-publish $*"
-fi
 
 PLATFORM=""
 LATEST=false
 POST_TEXT=""
 REELS=false
-MEDIA_FILE=""
+MEDIA_FILES=()
 
 for arg in "$@"; do
   case "$arg" in
@@ -27,14 +23,24 @@ for arg in "$@"; do
   --text=*) POST_TEXT="${arg#*=}" ;;
   -t=*) POST_TEXT="${arg#*=}" ;;
   --reels | --vertical) REELS=true ;;
+  --media=*)
+    IFS=',' read -ra M_PARTS <<< "${arg#*=}"
+    for m in "${M_PARTS[@]}"; do
+      [[ -n $m ]] && MEDIA_FILES+=("$m")
+    done
+    ;;
   -*) ;;
   *)
-    if [[ -z $MEDIA_FILE ]]; then
-      MEDIA_FILE="$arg"
+    if [[ -n $arg ]]; then
+      MEDIA_FILES+=("$arg")
     fi
     ;;
   esac
 done
+
+if [[ ! -t 0 && -z $PLATFORM ]]; then
+  exec omarchy-launch-floating-terminal-with-presentation "omarchy-publish $*"
+fi
 
 find_latest_media() {
   local candidate=""
@@ -54,76 +60,122 @@ find_latest_media() {
   echo "$candidate"
 }
 
-if [[ $LATEST == "true" && -z $MEDIA_FILE ]]; then
-  MEDIA_FILE=$(find_latest_media)
+if [[ $LATEST == "true" && ${#MEDIA_FILES[@]} -eq 0 ]]; then
+  latest_media=$(find_latest_media)
+  if [[ -n $latest_media ]]; then
+    MEDIA_FILES+=("$latest_media")
+  fi
 fi
 
-if [[ -z $MEDIA_FILE && -t 0 ]]; then
+if [[ ${#MEDIA_FILES[@]} -eq 0 && -t 0 ]]; then
   media_choice=$(gum choose \
     "󰵸 Use latest screen recording or GIF" \
     "󰹑 Use latest screenshot" \
-    " Choose file from system..." \
+    " Choose file(s) from system..." \
+    "📋 Paste from clipboard" \
     "󰭷 Text post only (no media)" \
     --header "Select Media to Publish") || exit 0
 
   case "$media_choice" in
   *"latest screen recording"*)
     rec_file="/tmp/omarchy-screenrecord-filename"
+    recent_rec=""
     if [[ -f $rec_file ]]; then
-      MEDIA_FILE=$(cat "$rec_file" 2>/dev/null || true)
+      recent_rec=$(cat "$rec_file" 2>/dev/null || true)
     fi
-    if [[ -z $MEDIA_FILE || ! -f $MEDIA_FILE ]]; then
+    if [[ -z $recent_rec || ! -f $recent_rec ]]; then
       video_dir="${OMARCHY_SCREENRECORD_DIR:-${XDG_VIDEOS_DIR:-$HOME/Videos}}"
-      MEDIA_FILE=$(find "$video_dir" -maxdepth 2 -type f \( -name "*.mp4" -o -name "*.gif" -o -name "*.webm" \) -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -n 1 | cut -d' ' -f2-)
+      recent_rec=$(find "$video_dir" -maxdepth 2 -type f \( -name "*.mp4" -o -name "*.gif" -o -name "*.webm" \) -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -n 1 | cut -d' ' -f2-)
     fi
+    [[ -n $recent_rec ]] && MEDIA_FILES+=("$recent_rec")
     ;;
   *"latest screenshot"*)
     pic_dir="${OMARCHY_SCREENSHOT_DIR:-${XDG_PICTURES_DIR:-$HOME/Pictures}}"
-    MEDIA_FILE=$(find "$pic_dir" -maxdepth 2 -type f \( -name "*.png" -o -name "*.jpg" -o -name "*.webp" \) -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -n 1 | cut -d' ' -f2-)
+    recent_pic=$(find "$pic_dir" -maxdepth 2 -type f \( -name "*.png" -o -name "*.jpg" -o -name "*.webp" \) -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -n 1 | cut -d' ' -f2-)
+    [[ -n $recent_pic ]] && MEDIA_FILES+=("$recent_pic")
     ;;
   *"Choose file"*)
-    MEDIA_FILE=$(omarchy-file-select --title "Select Media to Share") || exit 0
+    while IFS= read -r picked; do
+      [[ -n $picked ]] && MEDIA_FILES+=("$picked")
+    done < <(omarchy-file-select --multiple --title "Select Media to Share" --extensions "png jpg jpeg webp gif mp4 mkv webm" 2>/dev/null || true)
+    ;;
+  *"Paste from clipboard"*)
+    if wl-paste -l 2>/dev/null | grep -q "image/png"; then
+      pasted_file="/tmp/social-pasted-$(date +%s).png"
+      wl-paste --type image/png > "$pasted_file"
+      MEDIA_FILES+=("$pasted_file")
+    elif wl-paste -l 2>/dev/null | grep -q "text/uri-list"; then
+      for uri in $(wl-paste); do
+        f="${uri#file://}"
+        [[ -f $f ]] && MEDIA_FILES+=("$f")
+      done
+    else
+      f=$(wl-paste 2>/dev/null | tr -d '\r\n')
+      [[ -f $f ]] && MEDIA_FILES+=("$f")
+    fi
     ;;
   *"Text post only"*)
-    MEDIA_FILE=""
+    MEDIA_FILES=()
     ;;
   esac
 fi
 
-if [[ -n $MEDIA_FILE && ! -f $MEDIA_FILE ]]; then
-  echo "Error: media file not found: $MEDIA_FILE" >&2
-  exit 1
-fi
+VALID_MEDIA=()
+for f in "${MEDIA_FILES[@]}"; do
+  if [[ -f $f ]]; then
+    VALID_MEDIA+=("$f")
+  elif [[ -n $f ]]; then
+    echo "Warning: media file not found: $f" >&2
+  fi
+done
+MEDIA_FILES=("${VALID_MEDIA[@]}")
 
 # Media processing if video
-if [[ -n $MEDIA_FILE && $MEDIA_FILE =~ \.(mp4|mkv|webm)$ ]]; then
-  if [[ $REELS == "true" ]]; then
-    format_choice="Convert to 9:16 vertical Reel / Short"
-  elif [[ -t 0 ]]; then
-    format_choice=$(gum choose \
-      "Original video format" \
-      "Convert to 9:16 vertical Reel / Short (blurred background)" \
-      "Convert to high-quality animated GIF" \
-      --header "Video Formatting") || exit 0
-  else
-    format_choice="Original video format"
-  fi
+PROCESSED_MEDIA=()
+for f in "${MEDIA_FILES[@]}"; do
+  if [[ $f =~ \.(mp4|mkv|webm)$ ]]; then
+    if [[ $REELS == "true" ]]; then
+      format_choice="Convert to 9:16 vertical Reel / Short"
+    elif [[ -t 0 ]]; then
+      format_choice=$(gum choose \
+        "Original video format" \
+        "Convert to 9:16 vertical Reel / Short (blurred background)" \
+        "Convert to high-quality animated GIF" \
+        --header "Video Formatting for $(basename "$f")") || exit 0
+    else
+      format_choice="Original video format"
+    fi
 
-  case "$format_choice" in
-  *"9:16 vertical Reel"*)
-    reel_output="${MEDIA_FILE%.*}-reel-9x16.mp4"
-    gum spin --title "Formatting video for Instagram Reels (9:16)..." -- \
-      ffmpeg -y -i "$MEDIA_FILE" -vf "split[original][copy];[copy]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,gblur=sigma=20[blurred];[original]scale=1080:1920:force_original_aspect_ratio=decrease[scaled];[blurred][scaled]overlay=(W-w)/2:(H-h)/2" -c:a copy "$reel_output" -loglevel quiet
-    MEDIA_FILE="$reel_output"
-    ;;
-  *"animated GIF"*)
-    gif_output="${MEDIA_FILE%.*}.gif"
-    gum spin --title "Converting video to GIF palette..." -- \
-      ffmpeg -y -i "$MEDIA_FILE" -vf "fps=15,scale='min(1080,iw)':-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=256:stats_mode=diff[p];[s1][p]paletteuse=dither=bayer:bayer_scale=3" "$gif_output" -loglevel quiet
-    MEDIA_FILE="$gif_output"
-    ;;
-  esac
-fi
+    case "$format_choice" in
+    *"9:16 vertical Reel"*)
+      reel_output="${f%.*}-reel-9x16.mp4"
+      if [[ -t 0 ]]; then
+        gum spin --title "Formatting $(basename "$f") for Instagram Reels (9:16)..." -- \
+          ffmpeg -y -i "$f" -vf "split[original][copy];[copy]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,gblur=sigma=20[blurred];[original]scale=1080:1920:force_original_aspect_ratio=decrease[scaled];[blurred][scaled]overlay=(W-w)/2:(H-h)/2" -c:a copy "$reel_output" -loglevel quiet
+      else
+        ffmpeg -y -i "$f" -vf "split[original][copy];[copy]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,gblur=sigma=20[blurred];[original]scale=1080:1920:force_original_aspect_ratio=decrease[scaled];[blurred][scaled]overlay=(W-w)/2:(H-h)/2" -c:a copy "$reel_output" -loglevel quiet
+      fi
+      PROCESSED_MEDIA+=("$reel_output")
+      ;;
+    *"animated GIF"*)
+      gif_output="${f%.*}.gif"
+      if [[ -t 0 ]]; then
+        gum spin --title "Converting $(basename "$f") to GIF..." -- \
+          ffmpeg -y -i "$f" -vf "fps=15,scale='min(1080,iw)':-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=256:stats_mode=diff[p];[s1][p]paletteuse=dither=bayer:bayer_scale=3" "$gif_output" -loglevel quiet
+      else
+        ffmpeg -y -i "$f" -vf "fps=15,scale='min(1080,iw)':-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=256:stats_mode=diff[p];[s1][p]paletteuse=dither=bayer:bayer_scale=3" "$gif_output" -loglevel quiet
+      fi
+      PROCESSED_MEDIA+=("$gif_output")
+      ;;
+    *)
+      PROCESSED_MEDIA+=("$f")
+      ;;
+    esac
+  else
+    PROCESSED_MEDIA+=("$f")
+  fi
+done
+MEDIA_FILES=("${PROCESSED_MEDIA[@]}")
 
 # Platform selection
 if [[ -z $PLATFORM && -t 0 ]]; then
@@ -179,62 +231,91 @@ if [[ -z $POST_TEXT && -t 0 ]]; then
 fi
 
 # Copy media or path to clipboard
-if [[ -n $MEDIA_FILE ]]; then
-  if [[ $MEDIA_FILE =~ \.(png|jpg|jpeg|webp)$ ]]; then
-    wl-copy --type image/png <"$MEDIA_FILE" 2>/dev/null || true
-  else
-    printf '%s\n' "file://$MEDIA_FILE" | wl-copy --type text/uri-list 2>/dev/null || true
-  fi
+if (( ${#MEDIA_FILES[@]} == 1 )) && [[ ${MEDIA_FILES[0]} =~ \.(png|jpg|jpeg|webp)$ ]]; then
+  wl-copy --type image/png <"${MEDIA_FILES[0]}" 2>/dev/null || true
+elif (( ${#MEDIA_FILES[@]} > 0 )); then
+  uri_list=""
+  for f in "${MEDIA_FILES[@]}"; do
+    uri_list+="file://$f"$'\n'
+  done
+  printf '%s' "$uri_list" | wl-copy --type text/uri-list 2>/dev/null || true
+elif [[ -n $POST_TEXT ]]; then
+  printf '%s\n' "$POST_TEXT" | wl-copy 2>/dev/null || true
 fi
 
 url_encode() {
   python3 -c "import urllib.parse, sys; print(urllib.parse.quote(sys.stdin.read().strip()))" <<<"$1"
 }
 
-case "$PLATFORM" in
-x | twitter)
-  encoded_text=$(url_encode "$POST_TEXT")
-  target_url="https://x.com/intent/post?text=${encoded_text}"
-  if [[ -n $MEDIA_FILE ]]; then
+publish_target() {
+  local target="$1"
+  case "$target" in
+  x | twitter)
+    local encoded_text
+    encoded_text=$(url_encode "$POST_TEXT")
+    omarchy-launch-browser "https://x.com/intent/post?text=${encoded_text}"
+    ;;
+  bluesky)
+    local encoded_text
+    encoded_text=$(url_encode "$POST_TEXT")
+    omarchy-launch-browser "https://bsky.app/intent/compose?text=${encoded_text}"
+    ;;
+  threads)
+    local encoded_text
+    encoded_text=$(url_encode "$POST_TEXT")
+    omarchy-launch-browser "https://www.threads.net/intent/post?text=${encoded_text}"
+    ;;
+  instagram | reels)
+    omarchy-launch-browser "https://www.instagram.com/"
+    ;;
+  clipboard | *)
     printf '%s\n' "$POST_TEXT" | wl-copy 2>/dev/null || true
-    omarchy-notification-send "Ready to post on X" "Caption and media copied to clipboard. Paste (Ctrl+V) directly into composer." -t 8000
-  fi
-  omarchy-launch-browser "$target_url"
-  ;;
-bluesky)
-  encoded_text=$(url_encode "$POST_TEXT")
-  target_url="https://bsky.app/intent/compose?text=${encoded_text}"
-  if [[ -n $MEDIA_FILE ]]; then
-    printf '%s\n' "$POST_TEXT" | wl-copy 2>/dev/null || true
-    omarchy-notification-send "Ready to post on Bluesky" "Caption and media copied to clipboard. Attach media in composer." -t 8000
-  fi
-  omarchy-launch-browser "$target_url"
-  ;;
-threads)
-  encoded_text=$(url_encode "$POST_TEXT")
-  target_url="https://www.threads.net/intent/post?text=${encoded_text}"
-  if [[ -n $MEDIA_FILE ]]; then
-    printf '%s\n' "$POST_TEXT" | wl-copy 2>/dev/null || true
-    omarchy-notification-send "Ready to post on Threads" "Caption and media copied to clipboard." -t 8000
-  fi
-  omarchy-launch-browser "$target_url"
-  ;;
-instagram | reels)
-  printf '%s\n' "$POST_TEXT" | wl-copy 2>/dev/null || true
-  omarchy-notification-send "Instagram / Reels Publisher" "Caption copied. Media path: $MEDIA_FILE" -t 8000
-  omarchy-launch-browser "https://www.instagram.com/"
-  ;;
-clipboard | *)
-  printf '%s\n' "$POST_TEXT" | wl-copy 2>/dev/null || true
-  omarchy-notification-send "Copied to clipboard" "Ready to paste on your platform of choice." -t 5000
-  ;;
-esac
+    ;;
+  esac
+}
 
-gum style --border rounded --padding "1 2" --margin "1 0" \
-  --border-foreground 212 \
-  "$(gum style --bold --foreground 212 '󰵸 Social Publisher Ready!')" \
-  "" \
-  "Platform: $(gum style --foreground 99 "$PLATFORM")" \
-  "Media:    $(gum style --foreground 220 "${MEDIA_FILE:-None}")" \
-  "" \
-  "Caption copied to clipboard. Browser launched for instant publishing."
+# Split platforms by comma
+IFS=',' read -ra RAW_TARGETS <<< "$PLATFORM"
+TARGETS=()
+declare -A seen_targets
+for t in "${RAW_TARGETS[@]}"; do
+  cleaned=$(echo "$t" | tr '[:upper:]' '[:lower:]' | xargs)
+  if [[ $cleaned == "all" ]]; then
+    for sub in x instagram bluesky threads; do
+      if [[ -z ${seen_targets[$sub]:-} ]]; then
+        seen_targets[$sub]=1
+        TARGETS+=("$sub")
+      fi
+    done
+  elif [[ -n $cleaned && -z ${seen_targets[$cleaned]:-} ]]; then
+    seen_targets[$cleaned]=1
+    TARGETS+=("$cleaned")
+  fi
+done
+
+if (( ${#TARGETS[@]} == 0 )); then
+  TARGETS=("clipboard")
+fi
+
+for target in "${TARGETS[@]}"; do
+  publish_target "$target"
+done
+
+target_names="${TARGETS[*]}"
+if (( ${#MEDIA_FILES[@]} > 0 )); then
+  omarchy-notification-send "Social Publisher" "${#MEDIA_FILES[@]} media item(s) attached. Launching: $target_names" -t 8000
+else
+  omarchy-notification-send "Social Publisher" "Caption copied. Launching publisher for: $target_names" -t 8000
+fi
+
+if [[ -t 0 ]]; then
+  media_summary="${MEDIA_FILES[*]:-None}"
+  gum style --border rounded --padding "1 2" --margin "1 0" \
+    --border-foreground 212 \
+    "$(gum style --bold --foreground 212 '󰵸 Social Publisher Ready!')" \
+    "" \
+    "Platform(s): $(gum style --foreground 99 "$target_names")" \
+    "Media (${#MEDIA_FILES[@]}):   $(gum style --foreground 220 "$media_summary")" \
+    "" \
+    "Caption and media copied to clipboard. Browser launched for instant publishing."
+fi

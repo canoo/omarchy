@@ -12,7 +12,7 @@ mkdir -p "$stub_bin"
 
 cat >"$stub_bin/omarchy-launch-browser" <<'SH'
 #!/bin/bash
-printf '%s\n' "$@" >"$OMARCHY_TEST_BROWSER_URL"
+printf '%s\n' "$@" >>"$OMARCHY_TEST_BROWSER_URL"
 SH
 
 cat >"$stub_bin/omarchy-notification-send" <<'SH'
@@ -53,6 +53,7 @@ pass "menu contains social media triggers"
 test_img="$tmp_dir/test.png"
 touch "$test_img"
 
+rm -f "$OMARCHY_TEST_BROWSER_URL"
 "$ROOT/bin/omarchy-publish" --platform=x --text="Hello Omarchy" "$test_img"
 
 captured_url=$(cat "$OMARCHY_TEST_BROWSER_URL" 2>/dev/null || true)
@@ -61,6 +62,7 @@ captured_url=$(cat "$OMARCHY_TEST_BROWSER_URL" 2>/dev/null || true)
 pass "omarchy-publish generates proper X intent URL"
 
 # Test 4: Bluesky intent
+rm -f "$OMARCHY_TEST_BROWSER_URL"
 "$ROOT/bin/omarchy-publish" --platform=bluesky --text="Post to Bsky" "$test_img"
 captured_bsky_url=$(cat "$OMARCHY_TEST_BROWSER_URL" 2>/dev/null || true)
 [[ $captured_bsky_url == *"bsky.app/intent/compose?text=Post%20to%20Bsky"* ]] || \
@@ -70,8 +72,28 @@ pass "omarchy-publish generates proper Bluesky compose URL"
 # Test 5: Latest media detection
 rec_marker="/tmp/omarchy-screenrecord-filename"
 echo "$test_img" >"$rec_marker"
+rm -f "$OMARCHY_TEST_BROWSER_URL"
 "$ROOT/bin/omarchy-publish" --latest --platform=x --text="From latest"
 latest_url=$(cat "$OMARCHY_TEST_BROWSER_URL" 2>/dev/null || true)
 [[ $latest_url == *"From%20latest"* ]] || fail "omarchy-publish uses latest capture marker"
 pass "omarchy-publish uses latest capture marker"
 rm -f "$rec_marker"
+
+# Test 6: Multi-platform publishing (comma-separated)
+rm -f "$OMARCHY_TEST_BROWSER_URL"
+"$ROOT/bin/omarchy-publish" --platform=x,bluesky,threads --text="Multi-platform post" "$test_img"
+multi_urls=$(cat "$OMARCHY_TEST_BROWSER_URL" 2>/dev/null || true)
+[[ $multi_urls == *"x.com/intent/post"* ]] || fail "multi-platform publishes to X"
+[[ $multi_urls == *"bsky.app/intent/compose"* ]] || fail "multi-platform publishes to Bluesky"
+[[ $multi_urls == *"threads.net/intent/post"* ]] || fail "multi-platform publishes to Threads"
+pass "omarchy-publish supports multiple comma-separated platforms"
+
+# Test 7: Multiple media files
+test_img2="$tmp_dir/test2.png"
+touch "$test_img2"
+rm -f "$OMARCHY_TEST_BROWSER_URL" "$OMARCHY_TEST_CLIPBOARD"
+"$ROOT/bin/omarchy-publish" --platform=x --text="Two photos" "$test_img" "$test_img2"
+clipboard_content=$(cat "$OMARCHY_TEST_CLIPBOARD" 2>/dev/null || true)
+[[ $clipboard_content == *"file://$test_img"* ]] || fail "clipboard has first image URI"
+[[ $clipboard_content == *"file://$test_img2"* ]] || fail "clipboard has second image URI"
+pass "omarchy-publish copies multiple media files as uri-list to clipboard"
