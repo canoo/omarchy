@@ -288,6 +288,8 @@ Panel {
   function iconCandidatesForProvider(p, surfaceColor) {
     if (!p) return []
     var candidates = []
+    if (p.providerId === "antigravity")
+      candidates.push(Qt.resolvedUrl("assets/antigravity.png"))
     if (colorLuminance(surfaceColor || Color.background) >= 0.5)
       candidates.push(Qt.resolvedUrl("assets/" + p.providerId + "-light.svg"))
     candidates.push(Qt.resolvedUrl("assets/" + p.providerId + ".svg"))
@@ -341,10 +343,54 @@ Panel {
     bar: root.bar
     text: "󱚣"
     active: root.alarming
+    iconComponent: (root.provider && root.provider.providerId === "antigravity") ? antigravityBarIcon : null
     onPressed: function(buttonCode) {
       if (buttonCode === Qt.RightButton) root.launchAgent()
       else if (buttonCode === Qt.MiddleButton) root.selectProvider(root.providerIndex + 1)
       else root.toggle()
+    }
+  }
+
+  Component {
+    id: antigravityBarIcon
+    Item {
+      anchors.fill: parent
+
+      Rectangle {
+        id: barRainbowAura
+        anchors.centerIn: parent
+        width: parent.width + 4
+        height: parent.height + 4
+        radius: width / 2
+        opacity: 0.85
+        gradient: Gradient {
+          orientation: Gradient.Horizontal
+          GradientStop { position: 0.0; color: "#ea4335" }
+          GradientStop { position: 0.25; color: "#fbbc05" }
+          GradientStop { position: 0.5; color: "#34a853" }
+          GradientStop { position: 0.75; color: "#4285f4" }
+          GradientStop { position: 1.0; color: "#ea4335" }
+        }
+
+        RotationAnimation on rotation {
+          from: 0
+          to: 360
+          duration: 3500
+          loops: Animation.Infinite
+          running: true
+        }
+      }
+
+      Image {
+        anchors.fill: parent
+        anchors.margins: 1
+        source: Qt.resolvedUrl("assets/antigravity.png")
+        sourceSize.width: parent.width * 2
+        sourceSize.height: parent.height * 2
+        fillMode: Image.PreserveAspectFit
+        smooth: true
+        mipmap: true
+      }
     }
   }
 
@@ -420,9 +466,38 @@ Panel {
                 width: Style.font.display
                 height: Style.font.display
 
+                readonly property bool isAntigravity: root.provider && root.provider.providerId === "antigravity"
+
+                Rectangle {
+                  id: heroRainbowAura
+                  visible: heroMark.isAntigravity
+                  anchors.centerIn: parent
+                  width: parent.width + 10
+                  height: parent.height + 10
+                  radius: width / 2
+                  opacity: 0.7
+                  gradient: Gradient {
+                    orientation: Gradient.Horizontal
+                    GradientStop { position: 0.0; color: "#ea4335" }
+                    GradientStop { position: 0.25; color: "#fbbc05" }
+                    GradientStop { position: 0.5; color: "#34a853" }
+                    GradientStop { position: 0.75; color: "#4285f4" }
+                    GradientStop { position: 1.0; color: "#ea4335" }
+                  }
+
+                  RotationAnimation on rotation {
+                    from: 0
+                    to: 360
+                    duration: 4000
+                    loops: Animation.Infinite
+                    running: heroMark.isAntigravity
+                  }
+                }
+
                 Image {
                   id: heroMarkImage
                   anchors.fill: parent
+                  anchors.margins: heroMark.isAntigravity ? 2 : 0
                   source: heroMark.candidateIndex < heroMark.candidates.length ? heroMark.candidates[heroMark.candidateIndex] : ""
                   sourceSize.width: Style.font.display * 2
                   sourceSize.height: Style.font.display * 2
